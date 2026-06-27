@@ -1,1 +1,682 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Fortnite Mode TPS Building Game</title>
+<style>
+    body { 
+        margin: 0; 
+        overflow: hidden; 
+        background: #1a1a2e; 
+        font-family: sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    canvas { display: block; }
 
+    /* 横画面用の警告 */
+    @media orientation: portrait {
+        #orientation-warning { display: flex !important; }
+    }
+    #orientation-warning {
+        display: none;
+        position: fixed;
+        top:0; left:0; width:100%; height:100%;
+        background: rgba(26,26,46,0.95);
+        color: white;
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        font-size: 1.2rem;
+        text-align: center;
+    }
+
+    /* スマホUIレイアウト */
+    #touch-ui {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 10;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        box-sizing: border-box;
+        padding: 20px;
+        transition: opacity 0.3s ease;
+    }
+    .hidden {
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+
+    /* ジョイスティック */
+    #joystick-container {
+        width: 110px; height: 110px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-radius: 50%;
+        position: relative;
+        pointer-events: auto;
+    }
+    #joystick-knob {
+        width: 45px; height: 45px;
+        background: rgba(0, 255, 136, 0.7);
+        border-radius: 50%;
+        position: absolute;
+        top: 32px; left: 32px;
+        pointer-events: none;
+    }
+
+    /* アクションボタン群 */
+    .action-group {
+        display: grid;
+        grid-template-columns: repeat(2, 72px);
+        gap: 10px;
+        pointer-events: auto;
+    }
+    .btn {
+        width: 72px; height: 72px;
+        border-radius: 12px;
+        color: white;
+        font-weight: bold;
+        font-size: 0.8rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        cursor: pointer;
+        text-align: center;
+    }
+    #btn-mode { background: rgba(155, 89, 182, 0.9); border: 2px solid #9b59b6; grid-column: span 2; width: 154px; height: 45px; border-radius: 20px; font-size: 0.9rem;}
+    #btn-wall { background: rgba(230, 126, 34, 0.5); border: 2px solid #e67e22; }
+    #btn-floor { background: rgba(46, 204, 113, 0.5); border: 2px solid #2ecc71; }
+    #btn-ramp { background: rgba(52, 152, 219, 0.5); border: 2px solid #3498db; }
+    #btn-fire { background: rgba(231, 76, 60, 0.9); border: 2px solid #e74c3c; }
+    
+    /* 建築モードがアクティブな時のスタイル */
+    .build-active { background: rgba(230, 126, 34, 0.9) !important; }
+    .floor-active { background: rgba(46, 204, 113, 0.9) !important; }
+    .ramp-active { background: rgba(52, 152, 219, 0.9) !important; }
+
+    .btn span { font-size: 0.55rem; opacity: 0.8; margin-top: 2px; }
+
+    #info-panel {
+        position: fixed;
+        top: 15px; left: 15px;
+        color: #ffffff;
+        font-size: 0.9rem;
+        background: rgba(231, 76, 60, 0.8);
+        padding: 10px 20px;
+        border-radius: 50px;
+        pointer-events: none;
+        z-index: 11;
+        font-weight: bold;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+
+    #damage-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255, 0, 0, 0.3);
+        pointer-events: none;
+        z-index: 999;
+        opacity: 0;
+        transition: opacity 0.1s;
+    }
+</style>
+</head>
+<body>
+
+<div id="orientation-warning">画面を横向きにしてください 📱🔄</div>
+<div id="info-panel">⚔️ 戦闘モード (〇ボタンで建築へ)</div>
+<div id="damage-overlay"></div>
+
+<div id="touch-ui">
+    <div id="joystick-container"><div id="joystick-knob"></div></div>
+    
+    <div class="action-group">
+        <div id="btn-mode" class="btn">モード切替 <span>(〇ボタン)</span></div>
+        <div id="btn-wall" class="btn">壁<span>(R2)</span></div>
+        <div id="btn-floor" class="btn">床<span>(R1)</span></div>
+        <div id="btn-ramp" class="btn">階段<span>(L2)</span></div>
+        <div id="btn-fire" class="btn">攻撃<span>(R2)</span></div>
+    </div>
+</div>
+
+<script type="module">
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.FogExp2(0x1a1a2e, 0.015);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffe6a7, 1.2);
+dirLight.position.set(30, 50, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+scene.add(dirLight);
+
+// グリッド定義
+const GRID_SIZE = 4;
+const gridHelper = new THREE.GridHelper(200, 50, 0x444466, 0x222244);
+gridHelper.position.y = -0.01;
+scene.add(gridHelper);
+
+const floorMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(300, 300),
+    new THREE.MeshStandardMaterial({ color: 0x151525, roughness: 0.8 })
+);
+floorMesh.rotation.x = -Math.PI / 2;
+floorMesh.receiveShadow = true;
+scene.add(floorMesh);
+
+const enemies = [];
+const bullets = [];
+const enemyBullets = [];
+const allBuildings = []; 
+
+const BUILD_WALL = 0;
+const BUILD_FLOOR = 1;
+const BUILD_RAMP = 2;
+
+// モード管理 (false: 戦闘モード, true: 建築モード)
+let isBuildMode = false;
+
+// =====================
+// 🤖 プレイヤー
+// =====================
+const charRoot = new THREE.Group();
+const charBodyGroup = new THREE.Group();
+charRoot.add(charBodyGroup);
+
+const matBody = new THREE.MeshStandardMaterial({ color: 0x00ff88, roughness: 0.4 });
+const matJoint = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6 });
+const matSkin = new THREE.MeshStandardMaterial({ color: 0xffccaa, roughness: 0.5 });
+
+const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.3, 0.6), matBody);
+body.position.y = 1.45; body.castShadow = true; charBodyGroup.add(body);
+const headGroup = new THREE.Group(); headGroup.position.y = 2.6;
+const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), matSkin); head.castShadow = true; headGroup.add(head);
+charBodyGroup.add(headGroup);
+
+function makeLeg(x){
+    const leg = new THREE.Group(); leg.position.set(x, 0.9, 0);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.7, 0.35), new THREE.MeshStandardMaterial({ color: 0x3333ff }));
+    upper.position.y = -0.35; upper.castShadow = true; leg.add(upper);
+    const lowerGroup = new THREE.Group(); lowerGroup.position.y = -0.7;
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.7, 0.3), new THREE.MeshStandardMaterial({ color: 0x2222aa }));
+    lower.position.y = -0.35; lower.castShadow = true; lowerGroup.add(lower);
+    leg.add(lowerGroup); leg.userData = { lowerGroup: lowerGroup }; return leg;
+}
+const leftLeg = makeLeg(-0.35); const rightLeg = makeLeg(0.35); charBodyGroup.add(leftLeg, rightLeg);
+
+function makeArm(x){
+    const arm = new THREE.Group(); arm.position.set(x, 2.0, 0);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.6, 0.25), matBody); upper.position.y = -0.3; upper.castShadow = true; arm.add(upper);
+    const forearmGroup = new THREE.Group(); forearmGroup.position.y = -0.6;
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.6, 0.22), new THREE.MeshStandardMaterial({ color: 0x00aa88 }));
+    forearm.position.y = -0.3; forearm.castShadow = true; forearmGroup.add(forearm);
+    arm.add(forearmGroup); return arm;
+}
+const leftArm = makeArm(-0.65); const rightArm = makeArm(0.65); charBodyGroup.add(leftArm, rightArm);
+scene.add(charRoot);
+
+let playerVelocityY = 0;
+const GRAVITY = -24;
+
+// =====================
+// 🏗️ 建築システム
+// =====================
+function tryBuild(type) {
+    // 建築モードでなければ配置させない
+    if (!isBuildMode) return;
+
+    const frontDir = new THREE.Vector3(0, 0, 1).applyQuaternion(charRoot.quaternion).normalize();
+    const targetX = charRoot.position.x + frontDir.x * 2.5;
+    const targetZ = charRoot.position.z + frontDir.z * 2.5;
+
+    const snapX = Math.round(targetX / GRID_SIZE) * GRID_SIZE;
+    const snapZ = Math.round(targetZ / GRID_SIZE) * GRID_SIZE;
+    
+    // プレイヤーの向いている角度を90度単位にスナップ (階段・壁の向き完全同期)
+    const snapRotY = Math.round(charRoot.rotation.y / (Math.PI / 2)) * (Math.PI / 2);
+
+    let snapY = Math.round(charRoot.position.y / GRID_SIZE) * GRID_SIZE;
+    if (type === BUILD_FLOOR) {
+        snapY = Math.round((charRoot.position.y + 1) / GRID_SIZE) * GRID_SIZE;
+    }
+
+    // 1. 重なり防止
+    const duplicate = allBuildings.some(b => 
+        b.userData.type === type &&
+        b.userData.gridX === snapX &&
+        b.userData.gridY === snapY &&
+        b.userData.gridZ === snapZ
+    );
+    if (duplicate) return;
+
+    // 2. 空中浮遊防止チェック
+    let canPlace = false;
+    if (snapY === 0) {
+        canPlace = true; 
+    } else {
+        canPlace = allBuildings.some(b => {
+            const dx = Math.abs(b.userData.gridX - snapX);
+            const dy = Math.abs(b.userData.gridY - snapY);
+            const dz = Math.abs(b.userData.gridZ - snapZ);
+            return (dx <= GRID_SIZE && dy <= GRID_SIZE && dz <= GRID_SIZE);
+        });
+    }
+    if (!canPlace) return; 
+
+    // メッシュ作成
+    let geo, mat, mesh;
+    mat = new THREE.MeshStandardMaterial({ 
+        color: type === BUILD_WALL ? 0xe67e22 : type === BUILD_FLOOR ? 0x2ecc71 : 0x3498db, 
+        roughness: 0.4, transparent: true, opacity: 0.85
+    });
+
+    if (type === BUILD_WALL) {
+        geo = new THREE.BoxGeometry(4.0, 4.0, 0.3);
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(snapX, snapY + 2.0, snapZ);
+        mesh.rotation.y = snapRotY; // 壁の向きを同期
+    } else if (type === BUILD_FLOOR) {
+        geo = new THREE.BoxGeometry(4.0, 0.25, 4.0);
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(snapX, snapY, snapZ);
+    } else if (type === BUILD_RAMP) {
+        // 階段のモデリング（坂）
+        geo = new THREE.BoxGeometry(4.0, 0.25, 5.65);
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(snapX, snapY + 2.0, snapZ);
+        
+        // プレイヤーの向きに応じてローカルな傾きを正確に適用
+        mesh.rotation.y = snapRotY; 
+        mesh.rotation.x = -Math.PI / 4; 
+    }
+
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.userData = { 
+        type: type, 
+        gridX: snapX, gridY: snapY, gridZ: snapZ,
+        rotY: snapRotY,
+        id: Math.random().toString(36).substr(2, 9)
+    };
+
+    scene.add(mesh);
+    allBuildings.push(mesh);
+}
+
+// 根元破壊の連鎖処理
+function checkStability() {
+    if (allBuildings.length === 0) return;
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const supportedIDs = new Set();
+        allBuildings.forEach(b => { if (b.userData.gridY === 0) supportedIDs.add(b.userData.id); });
+
+        let sizeBefore = 0;
+        while (supportedIDs.size !== sizeBefore) {
+            sizeBefore = supportedIDs.size;
+            allBuildings.forEach(b => {
+                if (!supportedIDs.has(b.userData.id)) {
+                    const hasNeighbor = allBuildings.some(other => {
+                        if (!supportedIDs.has(other.userData.id)) return false;
+                        return (Math.abs(b.userData.gridX - other.userData.gridX) <= GRID_SIZE &&
+                                Math.abs(b.userData.gridY - other.userData.gridY) <= GRID_SIZE &&
+                                Math.abs(b.userData.gridZ - other.userData.gridZ) <= GRID_SIZE);
+                    });
+                    if (hasNeighbor) supportedIDs.add(b.userData.id);
+                }
+            });
+        }
+
+        for (let i = allBuildings.length - 1; i >= 0; i--) {
+            const b = allBuildings[i];
+            if (!supportedIDs.has(b.userData.id)) {
+                scene.remove(b); allBuildings.splice(i, 1); changed = true;
+            }
+        }
+    }
+}
+
+// モード表示切替UIの更新
+function toggleMode() {
+    isBuildMode = !isBuildMode;
+    const info = document.getElementById('info-panel');
+    const bWall = document.getElementById('btn-wall');
+    const bFloor = document.getElementById('btn-floor');
+    const bRamp = document.getElementById('btn-ramp');
+    const bFire = document.getElementById('btn-fire');
+
+    if (isBuildMode) {
+        info.innerText = "🛠️ 建築モード (R2:壁 / R1:床 / L2:階段)";
+        info.style.background = "rgba(46, 204, 113, 0.9)";
+        bWall.classList.add('build-active');
+        bFloor.classList.add('floor-active');
+        bRamp.classList.add('ramp-active');
+        bFire.style.opacity = "0.3";
+    } else {
+        info.innerText = "⚔️ 戦闘モード (〇ボタンで建築へ)";
+        info.style.background = "rgba(231, 76, 60, 0.9)";
+        bWall.classList.remove('build-active');
+        bFloor.classList.remove('floor-active');
+        bRamp.classList.remove('ramp-active');
+        bFire.style.opacity = "1";
+    }
+}
+
+// =====================
+// 🕹️ UI・ボタン操作マッピング
+// =====================
+const input = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, fire: false };
+let cameraAngles = { azimuth: 0, polar: Math.PI / 6 };
+const cameraDistance = 6;
+let isGamepadConnected = false;
+let canFire = true;
+
+const padFlags = { r2: false, r1: false, l2: false, l1: false, mode: false };
+
+const touchUI = document.getElementById('touch-ui');
+const joystickContainer = document.getElementById('joystick-container');
+const joystickKnob = document.getElementById('joystick-knob');
+const damageOverlay = document.getElementById('damage-overlay');
+
+// スマホ用ボタンイベント
+document.getElementById('btn-mode').addEventListener('touchstart', () => toggleMode());
+document.getElementById('btn-wall').addEventListener('touchstart', () => tryBuild(BUILD_WALL));
+document.getElementById('btn-floor').addEventListener('touchstart', () => tryBuild(BUILD_FLOOR));
+document.getElementById('btn-ramp').addEventListener('touchstart', () => tryBuild(BUILD_RAMP));
+document.getElementById('btn-fire').addEventListener('touchstart', () => { if(!isBuildMode) input.fire = true; });
+document.getElementById('btn-fire').addEventListener('touchend', () => { input.fire = false; });
+
+// ジョイスティック
+let joystickActive = false; let joystickStart = { x: 0, y: 0 };
+joystickContainer.addEventListener('touchstart', (e) => {
+    joystickActive = true;
+    const rect = joystickContainer.getBoundingClientRect();
+    joystickStart = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+});
+window.addEventListener('touchmove', (e) => {
+    if (!joystickActive) return;
+    let touch = null;
+    for(let t of e.touches) {
+        if(t.clientX < window.innerWidth / 2) touch = t;
+        else input.lookX = (t.clientX - (window.innerWidth*0.75)) * 0.005;
+    }
+    if(!touch) return;
+    const distX = touch.clientX - joystickStart.x; const distY = touch.clientY - joystickStart.y;
+    const maxDist = 45; const distance = Math.min(Math.sqrt(distX*distX + distY*distY), maxDist);
+    const angle = Math.atan2(distY, distX);
+    joystickKnob.style.transform = `translate(${Math.cos(angle)*distance}px, ${Math.sin(angle)*distance}px)`;
+    input.moveX = (Math.cos(angle)*distance) / maxDist; input.moveY = (Math.sin(angle)*distance) / maxDist;
+}, { passive: false });
+window.addEventListener('touchend', () => {
+    joystickActive = false; joystickKnob.style.transform = `translate(0px, 0px)`;
+    input.moveX = 0; input.moveY = 0;
+});
+
+// PCテスト用キーボード
+window.addEventListener('keydown', (e) => {
+    if(e.code === 'KeyW') input.moveY = -1; if(e.code === 'KeyS') input.moveY = 1;
+    if(e.code === 'KeyA') input.moveX = -1; if(e.code === 'KeyD') input.moveX = 1;
+    if(e.code === 'Space') { if(!isBuildMode) input.fire = true; }
+    if(e.code === 'KeyQ') toggleMode(); // Qキーでモード切替
+    if(e.code === 'KeyF') tryBuild(BUILD_WALL);
+    if(e.code === 'KeyG') tryBuild(BUILD_FLOOR);
+    if(e.code === 'KeyR') tryBuild(BUILD_RAMP);
+});
+window.addEventListener('keyup', (e) => {
+    if(['KeyW', 'KeyS'].includes(e.code)) input.moveY = 0; if(['KeyA', 'KeyD'].includes(e.code)) input.moveX = 0;
+    if(e.code === 'Space') input.fire = false;
+});
+
+window.addEventListener("gamepadconnected", () => { isGamepadConnected = true; touchUI.classList.add('hidden'); });
+window.addEventListener("gamepaddisconnected", () => { isGamepadConnected = false; touchUI.classList.remove('hidden'); });
+
+// 🎮 コントローラー（フォートナイト完全再現版）
+function updateGamepad() {
+    if (!isGamepadConnected) return;
+    const gps = navigator.getGamepads(); const gp = gps[0]; if (!gp) return;
+    const dead = (v) => Math.abs(v) > 0.15 ? v : 0;
+    
+    input.moveX = dead(gp.axes[0]); input.moveY = dead(gp.axes[1]);
+    input.lookX = dead(gp.axes[2]); input.lookY = dead(gp.axes[3]);
+
+    // 〇ボタン (Bボタン / 東側ボタン) で建築・戦闘モード切替
+    if (gp.buttons[1].pressed) {
+        if (!padFlags.mode) { toggleMode(); padFlags.mode = true; }
+    } else { padFlags.mode = false; }
+
+    if (!isBuildMode) {
+        // 【通常モード】R2で射撃
+        input.fire = gp.buttons[7].value > 0.5;
+    } else {
+        // 【建築モード】ワンボタン即時建築（誤射なし）
+        input.fire = false;
+        
+        // R2 (壁)
+        if (gp.buttons[7].pressed) {
+            if (!padFlags.r2) { tryBuild(BUILD_WALL); padFlags.r2 = true; }
+        } else { padFlags.r2 = false; }
+
+        // R1 (床)
+        if (gp.buttons[5].pressed) {
+            if (!padFlags.r1) { tryBuild(BUILD_FLOOR); padFlags.r1 = true; }
+        } else { padFlags.r1 = false; }
+
+        // L2 (階段)
+        if (gp.buttons[6].pressed) {
+            if (!padFlags.l2) { tryBuild(BUILD_RAMP); padFlags.l2 = true; }
+        } else { padFlags.l2 = false; }
+    }
+}
+
+function spawnBullet() {
+    if (!canFire) return; canFire = false; setTimeout(() => { canFire = true; }, 160);
+    const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+    bullet.position.copy(charRoot.position).y += 1.3;
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(charRoot.quaternion).normalize();
+    bullet.userData = { velocity: dir.multiplyScalar(0.95), life: 50 };
+    scene.add(bullet); bullets.push(bullet);
+}
+
+// 👾 敵の生成
+function createEnemy() {
+    const enemy = new THREE.Group();
+    const eBody = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 1.2), new THREE.MeshStandardMaterial({ color: 0xff3333 }));
+    eBody.position.y = 0.75; eBody.castShadow = true; enemy.add(eBody);
+    enemy.userData = { shootTimer: Math.random()*2, moveDir: new THREE.Vector3((Math.random()-0.5),0,(Math.random()-0.5)).normalize(), changeDirTimer: 2 };
+    enemy.position.set((Math.random()-0.5)*60, 0, (Math.random()-0.5)*60);
+    scene.add(enemy); enemies.push(enemy);
+}
+for(let i=0; i<3; i++) createEnemy();
+
+// =====================
+// 🏃‍♂️ 物理ループ＆高精度壁面判定
+// =====================
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    updateGamepad();
+
+    const delta = clock.getDelta();
+    cameraAngles.azimuth -= input.lookX * 0.05;
+    cameraAngles.polar = Math.max(0.05, Math.min(Math.PI/2.1, cameraAngles.polar + input.lookY * 0.03));
+    if(!isGamepadConnected && !joystickActive) input.lookX *= 0.9;
+
+    // 前フレームの位置を保存（衝突時のめり込み防止用）
+    const oldPos = charRoot.position.clone();
+
+    // 重力適用
+    playerVelocityY += GRAVITY * delta;
+    charRoot.position.y += playerVelocityY * delta;
+
+    let onGround = false;
+    if (charRoot.position.y <= 0) {
+        charRoot.position.y = 0; playerVelocityY = 0; onGround = true;
+    }
+
+    // プレイヤー移動の処理
+    const isMoving = Math.abs(input.moveX) > 0.1 || Math.abs(input.moveY) > 0.1;
+    if (isMoving) {
+        const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngles.azimuth).normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngles.azimuth).normalize();
+        const moveDir = forward.multiplyScalar(-input.moveY).add(right.multiplyScalar(input.moveX)).normalize();
+        
+        charRoot.position.add(moveDir.multiplyScalar(6.5 * delta));
+        
+        const targetRotation = Math.atan2(moveDir.x, moveDir.z);
+        let diff = targetRotation - charRoot.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        charRoot.rotation.y += diff * 0.25;
+
+        leftLeg.rotation.x = Math.sin(Date.now()*0.012) * 0.6; rightLeg.rotation.x = -Math.sin(Date.now()*0.012) * 0.6;
+        charBodyGroup.position.y = Math.abs(Math.sin(Date.now()*0.012)) * 0.18 - 0.08;
+    } else {
+        leftLeg.rotation.x = 0; rightLeg.rotation.x = 0;
+        charBodyGroup.position.y = Math.sin(Date.now() * 0.002) * 0.03;
+    }
+
+    // --- 🧱 建築物との当たり判定（床・階段・壁）の計算 ---
+    const px = charRoot.position.x; const pz = charRoot.position.z; const py = charRoot.position.y;
+
+    allBuildings.forEach(b => {
+        // ① 床の判定
+        if (b.userData.type === BUILD_FLOOR) {
+            if (Math.abs(px - b.position.x) < 2.0 && Math.abs(pz - b.position.z) < 2.0) {
+                if (py >= b.position.y - 0.2 && py + playerVelocityY * delta <= b.position.y + 0.1) {
+                    charRoot.position.y = b.position.y; playerVelocityY = 0; onGround = true;
+                }
+            }
+        } 
+        // ② 階段の判定（斜面コリジョン）
+        else if (b.userData.type === BUILD_RAMP) {
+            if (Math.abs(px - b.position.x) < 2.0 && Math.abs(pz - b.position.z) < 2.0) {
+                let rot = b.userData.rotY;
+                let localZ = - ((pz - b.position.z) * Math.cos(rot) + (px - b.position.x) * Math.sin(rot)); 
+                let rampHeight = b.userData.gridY + ((localZ + 2.0) / 4.0) * 4.0; 
+
+                if (py >= rampHeight - 0.3 && py <= rampHeight + 0.5) {
+                    charRoot.position.y = rampHeight; playerVelocityY = 0; onGround = true;
+                }
+            }
+        }
+        // ③ 壁の判定（突き抜け防止）
+        else if (b.userData.type === BUILD_WALL) {
+            // プレイヤーの高さが壁の範囲内にあるとき
+            if (py >= b.userData.gridY && py <= b.userData.gridY + 4.0) {
+                let rot = b.userData.rotY;
+                // 壁の正面方向・横方向のローカル距離を算出
+                let normalDist = (px - b.position.x) * Math.cos(rot) - (pz - b.position.z) * Math.sin(rot);
+                let sideDist = (px - b.position.x) * Math.sin(rot) + (pz - b.position.z) * Math.cos(rot);
+                
+                // 壁の厚み(0.5)と横幅(2.0)の中にプレイヤーの当たり判定が入ったら押し戻す
+                if (Math.abs(normalDist) < 0.6 && Math.abs(sideDist) < 2.0) {
+                    charRoot.position.x = oldPos.x;
+                    charRoot.position.z = oldPos.z;
+                }
+            }
+        }
+    });
+
+    // カメラ追従
+    camera.position.set(
+        charRoot.position.x + cameraDistance * Math.sin(cameraAngles.azimuth) * Math.cos(cameraAngles.polar),
+        charRoot.position.y + 1.8 + cameraDistance * Math.sin(cameraAngles.polar),
+        charRoot.position.z + cameraDistance * Math.cos(cameraAngles.azimuth) * Math.cos(cameraAngles.polar)
+    );
+    camera.lookAt(charRoot.position.x, charRoot.position.y + 1.3, charRoot.position.z);
+
+    if (input.fire) spawnBullet();
+
+    // 敵AI
+    enemies.forEach((enemy) => {
+        enemy.userData.changeDirTimer -= delta;
+        if(enemy.userData.changeDirTimer <= 0) {
+            enemy.userData.moveDir.set((Math.random()-0.5), 0, (Math.random()-0.5)).normalize();
+            enemy.userData.changeDirTimer = 2 + Math.random()*2;
+        }
+        enemy.position.add(enemy.userData.moveDir.clone().multiplyScalar(3.5 * delta));
+        enemy.lookAt(enemy.position.clone().add(enemy.userData.moveDir));
+
+        enemy.userData.shootTimer -= delta;
+        if(enemy.userData.shootTimer <= 0) {
+            enemy.userData.shootTimer = 2.0 + Math.random()*2;
+            const eb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff0055 }));
+            eb.position.copy(enemy.position).y = 1.0;
+            const toPlayer = new THREE.Vector3().copy(charRoot.position).sub(enemy.position).normalize();
+            toPlayer.y = 0;
+            eb.userData = { velocity: toPlayer.multiplyScalar(0.4), life: 80 };
+            scene.add(eb); enemyBullets.push(eb);
+        }
+    });
+
+    // 弾丸処理
+    let buildingDestroyed = false;
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i]; b.position.add(b.userData.velocity); b.userData.life--;
+        let hit = false;
+
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (b.position.distanceTo(new THREE.Vector3(e.position.x, 1.0, e.position.z)) < 1.2) {
+                scene.remove(e); enemies.splice(j, 1); hit = true; createEnemy(); break;
+            }
+        }
+        if(!hit) {
+            for (let k = allBuildings.length - 1; k >= 0; k--) {
+                const wall = allBuildings[k];
+                if (b.position.distanceTo(wall.position) < 2.2) {
+                    scene.remove(wall); allBuildings.splice(k, 1); hit = true; buildingDestroyed = true; break;
+                }
+            }
+        }
+        if (hit || b.userData.life <= 0) { scene.remove(b); bullets.splice(i, 1); }
+    }
+
+    if (buildingDestroyed) checkStability();
+
+    // 敵の弾
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const eb = enemyBullets[i]; eb.position.add(eb.userData.velocity); eb.userData.life--;
+        if (eb.position.distanceTo(new THREE.Vector3(charRoot.position.x, charRoot.position.y + 1.0, charRoot.position.z)) < 1.2) {
+            damageOverlay.style.opacity = "1"; setTimeout(() => { damageOverlay.style.opacity = "0"; }, 100);
+            scene.remove(eb); enemyBullets.splice(i, 1); continue;
+        }
+        for (let k = allBuildings.length - 1; k >= 0; k--) {
+            const wall = allBuildings[k];
+            if (eb.position.distanceTo(wall.position) < 2.0) {
+                scene.remove(wall); allBuildings.splice(k, 1); checkStability();
+                scene.remove(eb); enemyBullets.splice(i, 1); break;
+            }
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+</html>

@@ -144,7 +144,7 @@ const EYE_HEIGHT   = 1.62;
 const EYE_OFFSET   = EYE_HEIGHT - PLAYER_H / 2;
 
 const CHUNK_SIZE        = 16;
-const CHUNKS_PER_SIDE   = 4;               // 4x4 = 64x64 ブロックのワールド
+const CHUNKS_PER_SIDE   = 6;               // 6x6 = 96x96 ブロックのワールド
 const WORLD_SIZE        = CHUNK_SIZE * CHUNKS_PER_SIDE;
 const WORLD_HEIGHT      = 26;
 const BASE_HEIGHT       = 11;
@@ -254,7 +254,7 @@ function generateWorld() {
    ========================================================= */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fc7ff);
-scene.fog = new THREE.Fog(0x8fc7ff, 34, 78);
+scene.fog = new THREE.Fog(0x8fc7ff, 40, 100);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.rotation.order = 'YXZ';
@@ -341,8 +341,8 @@ function faceMaterialKey(blockType, dir) {
    ブロックメッシュ生成 (面カリング + マテリアル毎にまとめ描画)
    ========================================================= */
 const FACES = [
-  { dir: 'top',    normal: [0, 1, 0],  corners: [[0,1,0],[1,1,0],[1,1,1],[0,1,1]] },
-  { dir: 'bottom', normal: [0,-1, 0],  corners: [[0,0,1],[1,0,1],[1,0,0],[0,0,0]] },
+  { dir: 'top',    normal: [0, 1, 0],  corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]] },
+  { dir: 'bottom', normal: [0,-1, 0],  corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] },
   { dir: 'north',  normal: [0, 0,-1],  corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]] },
   { dir: 'south',  normal: [0, 0, 1],  corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]] },
   { dir: 'east',   normal: [1, 0, 0],  corners: [[1,0,1],[1,0,0],[1,1,0],[1,1,1]] },
@@ -430,6 +430,8 @@ function rebuildAffectedChunks(x, z) {
 const world = new CANNON.World();
 world.gravity.set(0, GRAVITY, 0);
 world.solver.iterations = 10;
+world.defaultContactMaterial.friction = 0;
+world.defaultContactMaterial.restitution = 0;
 
 const blockBodies = new Map();
 const blockShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
@@ -594,7 +596,7 @@ lookZone.addEventListener('touchmove', (e) => {
       lastLookX = t.clientX; lastLookY = t.clientY;
       cameraYaw -= dx * LOOK_SENS;
       cameraPitch -= dy * LOOK_SENS;
-      cameraPitch = Math.max(-1.5, Math.min(1.5, cameraPitch));
+      cameraPitch = Math.max(-1.53, Math.min(1.53, cameraPitch));
     }
   }
 }, { passive: true });
@@ -683,10 +685,11 @@ function animate() {
 
   camera.rotation.x = cameraPitch;
   camera.rotation.y = cameraYaw;
+  camera.updateMatrixWorld(true);
 
   updateMovement();
 
-  if (frameCount % 6 === 0) syncPhysicsNearPlayer();
+  if (frameCount % 3 === 0) syncPhysicsNearPlayer();
 
   try {
     world.step(1 / 60, dt, 5);

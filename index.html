@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="Android対応のWeb通知テスト。通知許可とテスト通知を確認できます。">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon-192.png" type="image/png">
+  <title>Web通知テスト</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#121a2d; --line:#26324b; --text:#f4f7ff; --muted:#9ca9c4; --accent:#7c9cff; --green:#69e0ad; --red:#ff7f91; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(ellipse at top,#182548 0%,var(--bg) 58%); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); }
+    main { width:min(100%,680px); margin:0 auto; }
+    .top { display:flex; align-items:center; gap:12px; margin:10px 0 28px; }
+    .logo { width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#7598ff,#7e61d8);display:grid;place-items:center;box-shadow:0 8px 26px #647cff33;flex:none; }
+    .logo svg { width:26px;height:26px; }
+    h1 { font-size:clamp(24px,5vw,32px); margin:0; letter-spacing:-.04em; }
+    .subtitle { color:var(--muted);font-size:13px;margin-top:4px; }
+    .card { background:linear-gradient(160deg,#151f36f5,#101728f5);border:1px solid var(--line);border-radius:22px;padding:22px;margin:14px 0;box-shadow:0 18px 55px #0002; }
+    .eyebrow { color:#a8baff;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase; }
+    h2 { font-size:18px;margin:8px 0 7px; }
+    p { color:var(--muted);font-size:14px;line-height:1.75;margin:8px 0; }
+    .status-row { display:flex;align-items:center;gap:12px;margin:18px 0 8px; }
+    .dot { width:10px;height:10px;border-radius:50%;background:#8893aa;box-shadow:0 0 0 5px #8893aa18;flex:none; }
+    .dot.good { background:var(--green);box-shadow:0 0 0 5px #69e0ad18; }
+    .dot.bad { background:var(--red);box-shadow:0 0 0 5px #ff7f9118; }
+    #statusTitle { font-weight:750; }
+    #statusDetail { font-size:12px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere; }
+    .actions { display:grid;grid-template-columns:1fr;gap:10px;margin-top:18px; }
+    button { width:100%;min-height:49px;border:1px solid #354363;border-radius:14px;padding:12px 16px;background:#1a2540;color:var(--text);font:inherit;font-size:14px;font-weight:750;cursor:pointer;touch-action:manipulation; }
+    button.primary { background:linear-gradient(135deg,#7193ff,#7967e8);border-color:transparent;color:white; }
+    button.secondary { background:#151e31; }
+    button:disabled { opacity:.42;cursor:not-allowed; }
+    button:focus-visible { outline:3px solid #a9baff;outline-offset:3px; }
+    .result { display:none;padding:12px 14px;border-radius:12px;margin-top:14px;font-size:13px;line-height:1.6;overflow-wrap:anywhere; }
+    .result.show { display:block;background:#0c1426;border:1px solid var(--line); }
+    .result.error { border-color:#713847;color:#ffc0ca; }
+    .result.success { border-color:#2b6652;color:#b7ffdf; }
+    .mini-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px; }
+    .mini { border:1px solid var(--line);background:#0e1628;border-radius:14px;padding:13px;min-width:0; }
+    .mini .label { color:var(--muted);font-size:11px; }
+    .mini .value { font-size:13px;font-weight:750;margin-top:6px;overflow-wrap:anywhere; }
+    .steps { padding-left:20px;color:var(--muted);font-size:13px;line-height:1.8; }
+    .steps li { padding-left:4px;margin:5px 0; }
+    .note { border-left:3px solid #819bff;padding:9px 12px;background:#182340;border-radius:0 10px 10px 0;color:#c7d2ef;font-size:12px;line-height:1.7;margin-top:15px; }
+    footer { text-align:center;color:#75819b;font-size:11px;padding:16px 0 4px; }
+    dialog { width:min(calc(100% - 32px),420px);border:1px solid #354363;border-radius:22px;background:#131d32;color:var(--text);padding:23px;box-shadow:0 24px 90px #0009; }
+    dialog::backdrop { background:#030712bb;backdrop-filter:blur(5px); }
+    dialog h2 { margin-top:0; }
+    dialog .actions { margin-top:20px; }
+    @media(min-width:520px) { body{padding-top:40px}.actions{grid-template-columns:1fr 1fr}.actions .wide{grid-column:1/-1} }
+    @media(prefers-reduced-motion:no-preference) { .card{animation:appear .35s ease both}.card:nth-of-type(2){animation-delay:.06s}.card:nth-of-type(3){animation-delay:.12s} @keyframes appear{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}} }
+  </style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/>
+        <path d="M10 21h4"/>
+      </svg>
+    </div>
+    <div><h1>Web通知テスト</h1><div class="subtitle">ANDROID · WEB PUSH DEMO</div></div>
+  </header>
+
+  <section class="card">
+    <div class="eyebrow">Notification permission</div>
+    <h2>通知の許可状態</h2>
+    <p>通知を許可すると、このサイトからテスト通知を表示できます。許可を求めるタイミングはボタンを押したときだけです。</p>
+    <div class="status-row">
+      <span id="statusDot" class="dot" aria-hidden="true"></span>
+      <div><div id="statusTitle" aria-live="polite">確認中…</div><div id="statusDetail">ブラウザの対応状況を確認しています。</div></div>
+    </div>
+    <div class="mini-grid">
+      <div class="mini"><div class="label">通知 API</div><div id="apiValue" class="value">確認中</div></div>
+      <div class="mini"><div class="label">Service Worker</div><div id="swValue" class="value">準備中</div></div>
+    </div>
+    <div class="actions">
+      <button id="enableBtn" class="primary wide">通知を許可する</button>
+      <button id="testBtn" class="secondary" disabled>テスト通知を送る</button>
+      <button id="refreshBtn" class="secondary">状態を再確認</button>
+    </div>
+    <div id="result" class="result" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">How to test</div>
+    <h2>使い方</h2>
+    <ol class="steps">
+      <li>GitHub Pagesで公開したURLをAndroidのChromeで開く。</li>
+      <li>「通知を許可する」を押し、ブラウザの確認画面で許可する。</li>
+      <li>「テスト通知を送る」を押す。</li>
+      <li>通知が表示されたら、タップしてサイトに戻れることを確認する。</li>
+    </ol>
+    <div class="note">このデモはボタン操作で通知を表示するテスト版です。サーバーからのプッシュ配信や、サイトを閉じている間に自動で届く通知は含みません。</div>
+  </section>
+
+  <footer>通知はブラウザと端末の設定に従います。いつでも端末側で無効にできます。</footer>
+</main>
+
+<dialog id="permissionDialog" aria-labelledby="dialogTitle">
+  <h2 id="dialogTitle">このサイトの通知を有効にする？</h2>
+  <p>許可すると、テストボタンから端末の通知欄に通知を表示できます。通知は必要なときだけテストしてください。</p>
+  <div class="actions">
+    <button id="cancelDialog" class="secondary">今はしない</button>
+    <button id="confirmPermission" class="primary">続ける</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const statusDot = $("statusDot");
+  const statusTitle = $("statusTitle");
+  const statusDetail = $("statusDetail");
+  const apiValue = $("apiValue");
+  const swValue = $("swValue");
+  const enableBtn = $("enableBtn");
+  const testBtn = $("testBtn");
+  const refreshBtn = $("refreshBtn");
+  const result = $("result");
+  const permissionDialog = $("permissionDialog");
+  let swRegistration = null;
+  let supported = ("Notification" in window) && ("serviceWorker" in navigator);
+
+  function message(text, type = "") {
+    result.textContent = text;
+    result.className = "result show" + (type ? " " + type : "");
+  }
+
+  function permissionText(permission) {
+    if (permission === "granted") return ["通知は許可されています", "テスト通知を送信できます。", "good"];
+    if (permission === "denied") return ["通知はブロックされています", "ブラウザまたはAndroidのサイト設定で通知を許可してください。", "bad"];
+    return ["まだ許可されていません", "「通知を許可する」を押して、ブラウザの確認画面で選択してください。", ""];
+  }
+
+  function updateUI() {
+    if (!("Notification" in window)) {
+      statusTitle.textContent = "このブラウザは通知APIに非対応";
+      statusDetail.textContent = "対応ブラウザのHTTPSページで開いてください。";
+      statusDot.className = "dot bad";
+      apiValue.textContent = "非対応";
+      enableBtn.disabled = true;
+      testBtn.disabled = true;
+      return;
+    }
+    apiValue.textContent = "利用可能";
+    const [title, detail, state] = permissionText(Notification.permission);
+    statusTitle.textContent = title;
+    statusDetail.textContent = detail;
+    statusDot.className = "dot" + (state ? " " + state : "");
+    testBtn.disabled = Notification.permission !== "granted" || !swRegistration;
+    enableBtn.textContent = Notification.permission === "granted" ? "通知は許可済み" :
+      Notification.permission === "denied" ? "通知設定の確認方法" : "通知を許可する";
+  }
+
+  async function setupServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+      swValue.textContent = "非対応";
+      message("Service Workerに対応していません。Androidの対応ブラウザでHTTPSのURLを開いてください。", "error");
+      return;
+    }
+    if (!window.isSecureContext) {
+      swValue.textContent = "HTTPSが必要";
+      message("通知にはHTTPSが必要です。GitHub Pagesの https:// で始まる公開URLを使ってください。", "error");
+      return;
+    }
+    try {
+      swRegistration = await navigator.serviceWorker.register("./sw.js");
+      await navigator.serviceWorker.ready;
+      swValue.textContent = "準備完了";
+      updateUI();
+    } catch (error) {
+      swValue.textContent = "登録失敗";
+      message("Service Workerを登録できませんでした: " + (error && error.message ? error.message : "不明なエラー"), "error");
+    }
+  }
+
+  enableBtn.addEventListener("click", () => {
+    if (!("Notification" in window)) {
+      message("このブラウザは通知に対応していません。", "error");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      updateUI();
+      message("通知はすでに許可されています。テスト通知を送信できます。", "success");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      message("以前にブロックされています。Chromeのサイト設定 → 通知から、このサイトを許可してください。", "error");
+      return;
+    }
+    if (typeof permissionDialog.showModal === "function") permissionDialog.showModal();
+    else requestPermission();
+  });
+
+  $("cancelDialog").addEventListener("click", () => permissionDialog.close());
+
+  $("confirmPermission").addEventListener("click", async () => {
+    permissionDialog.close();
+    await requestPermission();
+  });
+
+  async function requestPermission() {
+    try {
+      const permission = await Notification.requestPermission();
+      updateUI();
+      if (permission === "granted") {
+        message("通知が許可されました。「テスト通知を送る」を押して確認してください。", "success");
+      } else if (permission === "denied") {
+        message("通知がブロックされました。Chromeのサイト設定から変更できます。", "error");
+      } else {
+        message("許可は選択されませんでした。必要ならもう一度操作してください。");
+      }
+    } catch (error) {
+      message("通知の許可を取得できませんでした: " + (error && error.message ? error.message : "不明なエラー"), "error");
+    }
+  }
+
+  testBtn.addEventListener("click", async () => {
+    if (Notification.permission !== "granted") {
+      updateUI();
+      message("先に通知を許可してください。", "error");
+      return;
+    }
+    try {
+      if (!swRegistration) {
+        swRegistration = await navigator.serviceWorker.ready;
+      }
+      await swRegistration.showNotification("テスト通知が届きました！", {
+        body: "Web通知テストが正常に動作しています。",
+        icon: "./icon-192.png",
+        badge: "./icon-192.png",
+        tag: "web-notification-test",
+        renotify: false,
+        data: { url: new URL("./", document.baseURI).href },
+        vibrate: [120, 60, 120]
+      });
+      message("通知の表示を要求しました。端末の通知設定や集中モードによっては表示されない場合があります。", "success");
+    } catch (error) {
+      message("通知を表示できませんでした: " + (error && error.message ? error.message : "不明なエラー"), "error");
+    }
+    updateUI();
+  });
+
+  refreshBtn.addEventListener("click", () => {
+    updateUI();
+    message("通知の許可状態を再確認しました。");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) updateUI();
+  });
+
+  updateUI();
+  setupServiceWorker();
+})();
+</script>
+</body>
+</html>

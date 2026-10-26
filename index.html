@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Web通知のテスト</title>
+    <style>
+        body { font-family: sans-serif; padding: 40px; text-align: center; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>Web通知を体験してみよう</h1>
+    <p>※必ず http://localhost の環境で実行してください</p>
+
+    <!-- ステップ1: 許可を求めるボタン -->
+    <button onclick="requestPermission()">1. 通知を許可する</button>
+    
+    <!-- ステップ2: 通知を飛ばすボタン -->
+    <button onclick="sendNotification()">2. 通知をテスト送信</button>
+
+    <script>
+        // 1. ユーザーに通知の許可を求める関数
+        function requestPermission() {
+            if (!("Notification" in window)) {
+                alert("このブラウザは通知に対応していません。");
+                return;
+            }
+
+            Notification.requestPermission().then(permission => {
+                alert("現在のステータス: " + permission);
+            });
+        }
+
+        // 2. 実際に通知を表示する関数
+        function sendNotification() {
+            if (Notification.permission === "granted") {
+                // ここで通知のタイトルや本文、アイコンを設定
+                const notification = new Notification("【テスト】怪しいサイトの罠", {
+                    body: "システムが破損しています！（※これは自分で実行したテストです）",
+                    icon: "https://placeholder.com" // 任意の画像URL
+                });
+
+                // 通知がクリックされたときの動き
+                notification.onclick = function() {
+                    alert("通知がクリックされました！");
+                    window.focus();
+                };
+            } else {
+                alert("先に「1. 通知を許可する」を押して許可をオンにしてください。");
+            }
+        }
+    </script>
+</body>
+</html>
